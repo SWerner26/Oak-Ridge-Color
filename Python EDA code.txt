@@ -1,0 +1,139 @@
+import pandas as pd
+import numpy as np
+
+# Load dataset
+df = pd.read_excel(r'C:\Users\fmcal\Downloads\rgb2-features.xlsx') #Change to your file path
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# 1. Load the data
+df = pd.read_excel(r'C:\Users\fmcal\Downloads\rgb2-features.xlsx')
+
+# 2. Select key plant growth metrics (physical size / morphology)
+growth_cols = [
+    'area_mm2', 
+    'convex_area_mm2', 
+    'perimeter_mm', 
+    'bbox_height_mm', 
+    'bbox_width_mm'
+]
+
+# 3. Select key color metrics (RGB, HSV, HSL, vegetation indices)
+color_cols = [
+    'red_mean', 
+    'green_mean', 
+    'blue_mean', 
+    'hue_mean', 
+    'saturation_mean', 
+    'brightness_mean', 
+    'lightness_mean',
+    'green-red_mean', 
+    'blue-yellow_mean', 
+    'ngrdi_mean',
+    'proportional_green_mean'
+]
+
+# 4. Compute correlation matrices
+pearson_corr = df[growth_cols + color_cols].corr(method='pearson')
+spearman_corr = df[growth_cols + color_cols].corr(method='spearman')
+
+# Extract cross-correlations (Growth rows vs Color columns)
+growth_vs_color_p = pearson_corr.loc[growth_cols, color_cols]
+growth_vs_color_s = spearman_corr.loc[growth_cols, color_cols]
+
+print("--- Pearson Correlation Matrix ---")
+print(growth_vs_color_p.round(3))
+
+plt.figure(figsize=(12, 6))
+sns.heatmap(
+    growth_vs_color_p, 
+    annot=True, 
+    cmap='coolwarm', 
+    fmt=".2f", 
+    vmin=-1, 
+    vmax=1, 
+    cbar_kws={'label': 'Pearson Correlation Coefficient ($r$)'}
+)
+plt.title("Correlation Heatmap: Plant Growth vs Color Metrics", fontsize=14, pad=12)
+plt.xlabel("Color & Vegetation Features", fontsize=12)
+plt.ylabel("Growth / Size Features", fontsize=12)
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+# Identify color feature with strongest absolute correlation to plant area
+top_color_feature = growth_vs_color_p.loc['area_mm2'].abs().idxmax()
+top_r = growth_vs_color_p.loc['area_mm2', top_color_feature]
+
+print(f"Top Color Predictor for area_mm2: {top_color_feature} (r = {top_r:.3f})")
+
+# Plot relationship
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# 1. Area vs Top Color Predictor
+sns.regplot(
+    data=df, x=top_color_feature, y='area_mm2', ax=axes[0],
+    color='forestgreen', scatter_kws={'alpha':0.6}, line_kws={'color':'darkred'}
+)
+axes[0].set_title(f'Plant Area (mm²) vs {top_color_feature}')
+
+# 2. Area vs Normalized Green-Red Difference Index (NGRDI)
+sns.regplot(
+    data=df, x='ngrdi_mean', y='area_mm2', ax=axes[1],
+    color='teal', scatter_kws={'alpha':0.6}, line_kws={'color':'darkred'}
+)
+axes[1].set_title('Plant Area (mm²) vs NGRDI Mean')
+
+plt.tight_layout()
+plt.show()
+
+import numpy as np
+
+hue_bin_cols = [c for c in df.columns if c.startswith('hue_bin_')]
+hue_corrs = df[hue_bin_cols].apply(lambda x: x.corr(df['area_mm2']))
+angles = np.linspace(0, 360, len(hue_bin_cols), endpoint=False)
+
+plt.figure(figsize=(10, 4))
+plt.bar(angles, hue_corrs.values, width=11, color='maroon', edgecolor='black', alpha=0.8)
+plt.axhline(0, color='black', linestyle='--', linewidth=0.8)
+plt.title('Hue Spectrum Correlation Profile vs Plant Area')
+plt.xlabel('Hue Angle (Degrees)')
+plt.ylabel('Correlation (r) with area_mm2')
+plt.tight_layout()
+plt.show()
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+fig, ax1 = plt.subplots(figsize=(12, 5))
+
+# Primary Y-axis (Plant Area)
+sns.lineplot(data=df, x='date', y='area_mm2', ax=ax1, color='forestgreen', marker='o', label='Plant Area (mm²)')
+ax1.set_ylabel('Plant Area (mm²)', color='forestgreen', fontsize=11)
+ax1.tick_params(axis='y', labelcolor='forestgreen')
+ax1.tick_params(axis='x', rotation=45)
+
+# Secondary Y-axis (NGRDI Mean)
+ax2 = ax1.twinx()
+sns.lineplot(data=df, x='date', y='ngrdi_mean', ax=ax2, color='darkorange', marker='s', label='NGRDI Mean')
+ax2.set_ylabel('NGRDI Mean', color='darkorange', fontsize=11)
+ax2.tick_params(axis='y', labelcolor='darkorange')
+
+# Consolidate Legends into a Single Box
+handles1, labels1 = ax1.get_legend_handles_labels()
+handles2, labels2 = ax2.get_legend_handles_labels()
+
+ax1.legend(handles1 + handles2, labels1 + labels2, loc='upper left', frameon=True, facecolor='white')
+if ax2.get_legend():
+    ax2.get_legend().remove()
+
+plt.title('Temporal Dynamics: Plant Area & NGRDI over Time', fontsize=13, pad=12)
+plt.tight_layout()
+plt.show()
+
+
+
