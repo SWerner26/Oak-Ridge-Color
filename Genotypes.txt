@@ -1,0 +1,89 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.tree import DecisionTreeRegressor, plot_tree
+from sklearn.model_selection import train_test_split
+
+# 1. Load both datasets
+features_df =  pd.read_excel(r'C:\Users\fmcal\Downloads\rgb2-features.xlsx')
+design_df = pd.read_excel(r'C:\Users\fmcal\Downloads\rgb2-design.xlsx')
+
+# 2. Merge datasets on 'sample_key' to link each image with its genotype
+df = pd.merge(features_df, design_df[['sample_key', 'genotype']], on='sample_key', how='inner')
+
+# 3. Define features and clean display names (no underscores)
+feature_cols = [
+    'red_mean', 'green_mean', 'blue_mean', 
+    'hue_mean', 'saturation_mean', 'brightness_mean', 
+    'ngrdi_mean', 'proportional_green_mean'
+]
+friendly_names = [col.replace('_', ' ').capitalize() for col in feature_cols]
+target_col = 'area_mm2'
+
+# Custom color mapping for nodes based on feature names
+feature_color_map = {
+    'Green mean': '#C8E6C9',              # Soft Green
+    'Proportional green mean': '#C8E6C9', # Soft Green
+    'Red mean': '#FFCDD2',                # Soft Red
+    'Blue mean': '#BBDEFB',               # Soft Blue
+    'Ngrdi mean': '#E1BEE7',              # Soft Purple
+    'Hue mean': '#FFF9C4',                # Soft Yellow
+    'Saturation mean': '#FFF9C4',
+    'Brightness mean': '#E0E0E0'          # Soft Gray
+}
+
+# 4. Loop through each unique genotype and build the tree
+for geno_name, group_df in df.groupby('genotype'):
+    model_df = group_df[feature_cols + [target_col]].dropna()
+    
+    if len(model_df) < 50:  # Skip if sample size is too small
+        continue
+        
+    X = model_df[feature_cols]
+    y = model_df[target_col]
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Train Decision Tree Regressor
+    dt_regressor = DecisionTreeRegressor(max_depth=3, random_state=42)
+    dt_regressor.fit(X_train, y_train)
+    
+    # 5. Plot the Tree
+    plt.figure(figsize=(16, 8), dpi=300)
+    annotations = plot_tree(
+        dt_regressor, 
+        feature_names=friendly_names, 
+        filled=True, 
+        rounded=True, 
+        precision=2,
+        fontsize=10
+    )
+
+    # --- Apply custom box colors and format '≤' symbols ---
+    for annot in annotations:
+        text_str = annot.get_text()
+        
+        # Replace inequality symbol
+        if '<=' in text_str:
+            text_str = text_str.replace('<=', '≤')
+            annot.set_text(text_str)
+            
+        # Determine target color based on feature name
+        matched_color = None
+        for feat, hex_color in feature_color_map.items():
+            if feat.lower() in text_str.lower():
+                matched_color = hex_color
+                break
+                
+        # Leaf nodes get a clean neutral soft-gray look
+        if not matched_color and 'value' in text_str.lower():
+            matched_color = '#F5F5F5'
+            
+        # Directly color the bounding box patch associated with this annotation
+        patch = annot.get_bbox_patch()
+        if patch is not None and matched_color:
+            patch.set_facecolor(matched_color)
+            patch.set_edgecolor('#444444')
+            patch.set_linewidth(1.5)
+
+    plt.title(f"Decision Tree Regressor: Genotype '{geno_name}'", fontsize=14, fontweight='bold', pad=15)
+    plt.tight_layout()

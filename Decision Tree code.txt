@@ -1,0 +1,87 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.tree import DecisionTreeRegressor, plot_tree
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+
+# 1. Load your dataset
+df = pd.read_excel(r'C:\Users\fmcal\Downloads\rgb2-features.xlsx')
+
+# 2. Define original features and clean display names (no underscores)
+feature_cols = [
+    'red_mean', 'green_mean', 'blue_mean', 
+    'hue_mean', 'saturation_mean', 'brightness_mean', 
+    'ngrdi_mean', 'proportional_green_mean'
+]
+friendly_names = [col.replace('_', ' ').capitalize() for col in feature_cols]
+target_col = 'area_mm2'
+
+# Drop rows with missing values
+model_df = df[feature_cols + [target_col]].dropna()
+X = model_df[feature_cols]
+y = model_df[target_col]
+
+# 3. Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 4. Initialize and train the Decision Tree Regressor
+dt_regressor = DecisionTreeRegressor(max_depth=3, random_state=42)
+dt_regressor.fit(X_train, y_train)
+
+# 5. Visualize the Decision Tree
+plt.figure(figsize=(16, 8), dpi=300)
+plot_tree(
+    dt_regressor, 
+    feature_names=friendly_names, 
+    filled=True, 
+    rounded=True, 
+    precision=2,
+    fontsize=10
+)
+
+# --- VERIFIED CUSTOMIZATION: Direct Annotation Bounding Box Coloring & Symbol Replacement ---
+feature_color_map = {
+    'Green mean': '#C8E6C9',              # Soft Green
+    'Proportional green mean': '#C8E6C9', # Soft Green
+    'Red mean': '#FFCDD2',                # Soft Red
+    'Blue mean': '#BBDEFB',               # Soft Blue
+    'Ngrdi mean': '#E1BEE7',              # Soft Purple
+    'Hue mean': '#FFF9C4',                # Soft Yellow
+    'Saturation mean': '#FFF9C4',
+    'Brightness mean': '#E0E0E0'          # Soft Gray
+}
+
+ax = plt.gca()
+
+# Loop through all text annotations created by plot_tree
+for child in ax.get_children():
+    if isinstance(child, plt.matplotlib.text.Annotation):
+        text_str = child.get_text()
+        
+        # 1. Replace inequality symbol with true mathematical '≤'
+        if '<=' in text_str:
+            text_str = text_str.replace('<=', '≤')
+            child.set_text(text_str)
+            
+        # 2. Access the bounding box patch directly from the annotation object
+        patch = child.get_bbox_patch()
+        if patch:
+            colored = False
+            for feat, hex_color in feature_color_map.items():
+                if feat.lower() in text_str.lower():
+                    patch.set_facecolor(hex_color)
+                    patch.set_edgecolor('#444444')
+                    patch.set_linewidth(1.5)
+                    colored = True
+                    break
+            
+            # 3. Give leaf nodes (final answers) a clean neutral soft-gray look
+            if not colored and 'value' in text_str.lower():
+                patch.set_facecolor('#F5F5F5')
+                patch.set_edgecolor('#CCCCCC')
+                patch.set_linewidth(1.0)
+
+plt.title("Decision Tree Regressor: Predicting Plant Area (mm²) with Custom Color-Coded Nodes", fontsize=14, fontweight='bold', pad=15)
+plt.tight_layout()
+plt.savefig('custom_colored_decision_tree.png', dpi=300)
+plt.show()
