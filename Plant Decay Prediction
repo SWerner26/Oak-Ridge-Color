@@ -1,0 +1,82 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+
+# 1. Load datasets using your local file paths
+features_df = pd.read_excel(r'C:\Users\fmcal\Downloads\rgb2-features.xlsx')
+design_df = pd.read_excel(r'C:\Users\fmcal\Downloads\rgb2-design.xlsx')
+
+# Merge cleanly on 'sample_key' using explicit suffixes to prevent naming collisions
+df = pd.merge(features_df, design_df, on='sample_key', how='inner', suffixes=('', '_des'))
+
+# 2. Dynamically identify plant_id and date columns (handles any name variations or suffixes)
+plant_col = 'plant_id' if 'plant_id' in df.columns else [c for c in df.columns if 'plant_id' in c.lower()][0]
+date_candidates = [c for c in df.columns if 'date' in c.lower()]
+date_col = date_candidates[0] if date_candidates else 'date'
+
+# Convert date and sort chronologically per plant to preserve time-series order
+df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+df = df.sort_values(by=[plant_col, date_col])
+
+# 3. Engineer Longitudinal Features (Rate of Change / Velocity)
+df['ngrdi_lag'] = df.groupby(plant_col)['ngrdi_mean'].shift(1)
+df['ngrdi_change'] = df['ngrdi_mean'] - df['ngrdi_lag'] 
+
+# 4. Define FUTURE Decay Target (Predicting if the plant WILL decay in the next time step)
+DECAY_THRESHOLD = 0.02
+df['future_ngrdi'] = df.groupby(plant_col)['ngrdi_mean'].shift(-1)
+df['will_decay_soon'] = (df['future_ngrdi'] < DECAY_THRESHOLD).astype(int)
+
+# 5. Select Predictive Features
+feature_cols = [
+    'red_mean', 'green_mean', 'blue_mean', 
+    'hue_mean', 'saturation_mean', 'brightness_mean', 
+    'ngrdi_mean', 'proportional_green_mean', 'ngrdi_change'
+]
+target_col = 'will_decay_soon'
+
+# Clean missing values resulting from shifts/lags without wiping out the dataset
+model_df = df[feature_cols + [target_col]].dropna()
+X = model_df[feature_cols]
+y = model_df[target_col]
+
+print(f"Total valid samples ready for modeling: {len(X)}")
+
+# 6. Stratified Train/Test Split
+has_both_classes = y.nunique() > 1
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, 
+    stratify=y if has_both_classes else None
+)
+
+# 7. Train Random Forest Classifier
+rf_classifier = RandomForestClassifier(
+    n_estimators=100,
+    max_depth=6,
+    random_state=42,
+    n_jobs=-1
+)
+rf_classifier.fit(X_train, y_train)
+
+# 8. Evaluate Performance
+y_pred = rf_classifier.predict(X_test)
+print("\n=== RANDOM FOREST FUTURE DECAY PREDICTION PERFORMANCE ===")
+print(classification_report(y_test, y_pred, zero_division=0))
+
+# 9. Plot Feature Importance Chart
+importances = rf_classifier.feature_importances_
+sorted_idx = np.argsort(importances)
+
+plt.figure(figsize=(10, 6), dpi=300)
+plt.barh(range(len(feature_cols)), importances[sorted_idx], color='#2b5c8f')
+plt.yticks(range(len(feature_cols)), np.array(feature_cols)[sorted_idx])
+plt.xlabel("Feature Importance Score", fontsize=11)
+plt.title("Random Forest: Predicting Future Plant Decay", fontsize=13, fontweight='bold', pad=12)
+plt.grid(axis='x', linestyle=':', alpha=0.6)
+plt.tight_layout()
+plt.savefig(r'C:\Users\fmcal\Downloads\random_forest_future_decay_importance.png', dpi=300)
+plt.show()
+
